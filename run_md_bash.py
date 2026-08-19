@@ -3,6 +3,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+# ===================== 首次运行准备脚本字符串（新增，放在文件最前面） =====================
+FIRST_RUN_PREPARE_SCRIPT = """
+#!/bin/bash
+set -euo pipefail
+mkdir -p "$HOME/Downloads/softwares"
+mkdir -p "$HOME/Projects"
+"""
+
+
 def extract_bash_code_blocks(md_content: str) -> list[str]:
     """
           从markdown文本提取 ```bash 包裹的代码块
@@ -66,7 +76,7 @@ def main():
         try:
             # create softwares folder at first run
             if idx == 0:
-                run_bash_script("""mkdir -p $HOME/Downloads/softwares""", -1)
+                run_bash_script(FIRST_RUN_PREPARE_SCRIPT, -1)
             
             code = fixed_action + env_state + raw_code
             run_bash_script(code, idx)

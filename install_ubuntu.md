@@ -3,6 +3,7 @@
 2. 创建临时目录 `softwares` 并进入该目录
 3. 在临时目录下载安装包
 4. 安装完成后删除临时目录 `softwares`
+5. 安装podman镜像，并进入容器安装AI相关工具
 
 
 ## 准备安装
@@ -34,16 +35,18 @@ fi
 ```bash
 test_github_ssh() {
     echo "==== DEBUG ssh 测试开始 ====" >&2
-    ssh -T \
+    local out
+    out=$(ssh -T \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
         -o ConnectTimeout=10 \
         -i "${SSH_KEY_PATH}" \
-        git@github.com
+        git@github.com 2>&1)
     local ret=$?
+    echo "$out" >&2
     echo "==== DEBUG ssh 返回码: $ret ====" >&2
-    # 成功输出包含这段字符串
-    if [[ $? -eq 0 ]]; then
+
+    if echo "$out" | grep -q "successfully authenticated"; then
         return 0
     else
         return 1
@@ -302,6 +305,8 @@ else
       -v "${HOME_MOUNT_SRC}:/home/${HOST_USER}" \
       -v "${HOME}/Projects:/Projects" \
       -v /tmp/.X11-unix:/tmp/.X11-unix \
+      -v "${SSH_AUTH_SOCK}:/ssh-agent.sock:ro" \
+      -e SSH_AUTH_SOCK=/ssh-agent.sock \
       -e DISPLAY="${DISPLAY}" \
       "${IMAGE_NAME}" sleep infinity
 
@@ -333,7 +338,83 @@ EOF
 fi
 
 echo -e "\n🎉 环境就绪！进入容器命令："
-echo "podman exec -it --user \$USER -w /home/\$USER ${CONTAINER_NAME} bash"
+```
+
+
+## 安装git&git cli
+```bash
+HOST_USER="$USER"
+
+echo "========================================"
+echo "检查容器 ${CONTAINER_NAME} 状态"
+echo "========================================"
+
+# 判断容器是否存在
+if ! podman ps -a --filter "name=^/${CONTAINER_NAME}$" | grep -q "${CONTAINER_NAME}"; then
+    echo "ERROR: 容器 ${CONTAINER_NAME} 不存在，请先执行容器初始化脚本！"
+    exit 1
+fi
+
+# 容器停止则启动
+if ! podman ps --filter "name=^/${CONTAINER_NAME}$" | grep -q "${CONTAINER_NAME}"; then
+    echo "容器未运行，执行 podman start"
+    podman start "${CONTAINER_NAME}"
+    sleep 1
+fi
+
+podman exec -i --user root "${CONTAINER_NAME}" bash <<'INNER_ROOT_EOF'
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+echo "=== apt 更新，安装 git、ca‑certificates、curl、gnupg ==="
+apt update
+apt install -y git ca-certificates curl gnupg
+
+echo "=== 配置 GitHub CLI apt源 ==="
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+> /etc/apt/sources.list.d/github-cli.list
+
+apt update
+apt install -y gh
+
+echo "=== 版本检查 ==="
+git --version
+gh --version
+
+echo "✅ root端：git + gh‑cli 安装完成"
+INNER_ROOT_EOF
+
+podman exec -i --user "${HOST_USER}" "${CONTAINER_NAME}" bash <<'INNER_USER_EOF'
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+test_github_ssh_podman() {
+    echo "==== podman DEBUG ssh 测试开始 ====" >&2
+    local out
+    out=$(ssh -T \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+        -o ConnectTimeout=10 \
+        git@github.com 2>&1)
+    local ret=$?
+    echo "$out" >&2
+    echo "==== DEBUG ssh 返回码: $ret ====" >&2
+
+    if echo "$out" | grep -q "successfully authenticated"; then
+        return 0
+    else
+        return 1
+    fi
+}
+echo "容器内 SSH_AUTH_SOCK = ${SSH_AUTH_SOCK:-未设置}"
+if ! test_github_ssh_podman ; then
+    echo "ERROR: 容器内无法连通GitHub SSH，请检查socket挂载、宿主机ssh‑agent是否加载私钥" >&2
+    exit 1
+fi
+echo "容器内：GitHub SSH测试通过"
+INNER_USER_EOF
 ```
 
 
@@ -378,7 +459,7 @@ INNER_ROOT_EOF
 
 echo "===== 第三步($HOST_USER)：全新shell进程，配置npm环境 + 安装官方AI CLI工具 ====="
 # 关键点：全新podman exec，全新shell，拿到容器完整默认PATH，/usr/bin已经在PATH
-podman exec -i --user "${HOST_USER}" -w "/home/${HOST_USER}" "${CONTAINER_NAME}" bash <<'INNER_EOF'
+podman exec -i --user "${HOST_USER}" -w "/home/${HOST_USER}" "${CONTAINER_NAME}" bash <<'INNER_USER_EOF'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 HOME_DIR="$HOME"
@@ -443,7 +524,7 @@ echo ""
 echo "临时配置密钥示例："
 echo "export OPENAI_API_KEY=sk-xxx"
 echo "export ANTHROPIC_API_KEY=sk-ant-xxx"
-INNER_EOF
+INNER_USER_EOF
 ```
 
 
