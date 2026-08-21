@@ -438,6 +438,27 @@ fi
 
 ## 安装ubuntu镜像
 ```bash
+echo "===== 宿主机预处理：podman.socket 与 linger 配置 ====="
+# 1. 检测podman rootless socket是否存在，不存在则启用podman.socket
+SOCKET_PATH="/run/user/$UID/podman/podman.sock"
+if [ ! -S "${SOCKET_PATH}" ]; then
+    echo "ℹ️ podman socket ${SOCKET_PATH} 不存在，执行 systemctl --user enable --now podman.socket"
+    systemctl --user enable --now podman.socket
+    sleep 1
+else
+    echo "✅ podman socket 已存在 ${SOCKET_PATH}"
+fi
+
+# 2. 检查 linger 状态，没有开启则开启
+LINGER_STATUS=$(loginctl show-user "$USER" --property=Linger | cut -d'=' -f2)
+echo "ℹ️ 当前用户 linger 状态: ${LINGER_STATUS}"
+if [[ "${LINGER_STATUS}" != "yes" ]]; then
+    echo "⚠️ Linger未开启，执行 sudo loginctl enable-linger $USER"
+    sudo loginctl enable-linger "$USER"
+else
+    echo "✅ linger 已经开启"
+fi
+
 # ========== 配置区 ==========
 HOST_USER="$USER"
 HOME_MOUNT_SRC="${HOME}/Podman/${CONTAINER_NAME}"
@@ -469,6 +490,8 @@ else
       -v /tmp/.X11-unix:/tmp/.X11-unix \
       -v "${SSH_AUTH_SOCK}:/ssh-agent.sock:ro" \
       -e SSH_AUTH_SOCK=/ssh-agent.sock \
+      -v "/run/user/$UID/podman/podman.sock:/run/user/$UID/podman/podman.sock" \
+      -e CONTAINER_HOST="unix:///run/user/$UID/podman/podman.sock" \
       -e DISPLAY="${DISPLAY}" \
       "${IMAGE_NAME}" sleep infinity
 
@@ -506,7 +529,7 @@ podman exec -i --user root "${CONTAINER_NAME}" bash <<INNER_ROOT_EOF
     export DEBIAN_FRONTEND=noninteractive
 
     apt update
-    apt install -y sudo curl ca-certificates iproute2
+    apt install -y sudo curl ca-certificates iproute2 podman
     dpkg --configure --force-confdef --force-confold -a
 
 INNER_ROOT_EOF

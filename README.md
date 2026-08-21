@@ -97,3 +97,21 @@ curl -X POST http://opencodex_IP:10100/v1/chat/completions -H "Content-Type: app
 export ANTHROPIC_BASE_URL="opencodex_IP:10100"
 export ANTHROPIC_AUTH_TOKEN="OPENCODEX_API_AUTH_TOKEN"
 ```
+
+### 5 在容器内创建容器
+进入容器后执行
+```bash
+podman run -d --name sandbox01 -v "${HOME}/Projects:/Projects" ubuntu:24.04 sleep infinity
+podman exec -it sandbox01 bash
+
+# 执行任何操作，比如编译，改错等等。
+
+# ctrl + c 退出sandbox01
+```
+就可以进入一个新的名为sandbox01的容器。其实这个容器，是在host上创建的，并非嵌套关系。
+退出sandbox01后，需要在容器内执行，
+```bash
+podman stop sandbox01
+podman rm -f sandbox01
+```
+然后再退出到host，否则在host中无法删除这个容器。
