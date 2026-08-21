@@ -6,12 +6,19 @@ from pathlib import Path
 
 # ===================== 首次运行准备脚本字符串（新增，放在文件最前面） =====================
 FIRST_RUN_PREPARE_SCRIPT = """
-#!/bin/bash
-set -euo pipefail
-mkdir -p "$HOME/Downloads/softwares"
-mkdir -p "$HOME/Projects"
-"""
+        #!/bin/bash
+        set -euo pipefail
+        mkdir -p "$HOME/Downloads/softwares"
+        mkdir -p "$HOME/Projects"
+        """
 
+# ===================== 在host中每次固定执行的内容 =====================
+# 启用 set -euo pipefail，任意命令失败直接终止执行； 进入softwares目录
+fixed_action = """
+        set -euo pipefail
+        export DEBIAN_FRONTEND=noninteractive
+        cd $HOME/Downloads/softwares
+        """
 
 def extract_bash_code_blocks(md_content: str) -> list[str]:
     """
@@ -40,14 +47,7 @@ def run_bash_script(code: str, block_idx: int):
 
     print(f"\n✅ 第 {block_idx + 1} 个代码块执行完成\n")
 
-def main():
-    # fixed_action
-    # 启用 set -euo pipefail，任意命令失败直接终止执行； 进入softwares目录
-    fixed_action = """
-            set -euo pipefail
-            cd $HOME/Downloads/softwares
-            """
-    
+def main():   
     # -------- 读取 env.md 配置文件 --------
     env_md_path = Path("./env.md")
     if not env_md_path.exists():

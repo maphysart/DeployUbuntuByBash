@@ -1,0 +1,5 @@
+# 忽略项目根目录 env.md
+env.md
+
+# 忽略 codex 目录下 config.toml
+codex/config.toml

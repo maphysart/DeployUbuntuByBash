@@ -1,0 +1,16 @@
+# 默认使用的模型，就是你从 /v1/models 获取到的id
+model = "opencode-go/deepseek-v4-flash"
+# 指定使用我们自定义的provider名字 opencodex_lan
+model_provider = "opencodex_lan"
+
+# 自定义代理服务商配置
+[model_providers.opencodex_lan]
+name = "Lan‑OpenCodex‑Proxy"
+# 注意末尾必须带上 /v1
+base_url = "http://opencodex_IP:10100/v1"
+# 固定静态http请求头，每次请求自动带上鉴权头
+http_headers = { "x-opencodex-api-key" = "OPENCODEX_API_AUTH_TOKEN" }
+# wire_api：opencodex走chat completions协议
+wire_api = "responses"
+# 超时，局域网可以适当放大
+timeout = 120
