@@ -3,3 +3,6 @@ env.md
 
 # 忽略 codex 目录下 config.toml
 codex/config.toml
+
+# 忽略保存用户选项的文件
+.run_md_config.json

@@ -15,7 +15,8 @@ sudo apt update -y
 sudo apt install -y net-tools gedit synaptic git gedit curl
 ```
 
-## 安装Google Chrome
+
+## 安装Chrome
 ```bash
 echo "===== 开始安装 Google Chrome Stable ====="
 
@@ -745,7 +746,7 @@ INNER_USER_EOF
 ```
 
 
-## 完成安装
+## 安装完成善后
 ```bash
 echo "=====  安装完成后删除下载目录 softwares ====="
 cd ~
