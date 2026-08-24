@@ -6,6 +6,7 @@
 5. 安装podman镜像，并进入容器安装AI相关工具
 
 
+<!-- @force-run -->
 ## 更新源，安装必要软件
 ```bash
 # 更新软件源
@@ -13,6 +14,19 @@ sudo apt update -y
 
 # 安装必要的软件
 sudo apt install -y net-tools gedit synaptic git gedit curl
+
+echo "=== Checking flatpak ==="
+if ! command -v flatpak &>/dev/null; then
+    echo "Flatpak not found, installing flatpak..."
+    sudo apt install -y flatpak
+fi
+
+echo "=== Checking flathub remote ==="
+# 如果不存在才添加，避免重复报错; 添加【用户级】flathub源，无需sudo、不弹密码
+if ! flatpak --user remote-list | grep -q flathub; then
+    echo "Adding user-level flathub remote..."
+    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+fi
 ```
 
 
@@ -147,6 +161,12 @@ else
 fi
 
 echo "=== 2. 设置 Git 全局用户名与邮箱 ==="
+# 校验变量非空
+if [[ -z "${GIT_NAME}" || -z "${GIT_EMAIL}" ]]; then
+    echo "❌ 错误：GIT_NAME 或 GIT_EMAIL 变量为空，请在 env.md 中配置这两个变量！"
+    exit 1
+fi
+
 git config --global user.name "${GIT_NAME}"
 git config --global user.email "${GIT_EMAIL}"
 
@@ -331,19 +351,6 @@ fi
 
 ## 安装moonlight
 ```bash
-echo "=== Checking flatpak ==="
-if ! command -v flatpak &>/dev/null; then
-    echo "Flatpak not found, installing flatpak..."
-    sudo apt install -y flatpak
-fi
-
-echo "=== Checking flathub remote ==="
-# 如果不存在才添加，避免重复报错; 添加【用户级】flathub源，无需sudo、不弹密码
-if ! flatpak --user remote-list | grep -q flathub; then
-    echo "Adding user-level flathub remote..."
-    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-fi
-
 echo "===== Ubuntu24.04 Moonlight‑Qt 部署开始 ====="
 # 检测【用户级别】Moonlight是否已安装
 if flatpak list --app | grep -q 'com.moonlight_stream.Moonlight'; then
@@ -372,19 +379,6 @@ echo "flatpak run com.moonlight_stream.Moonlight stream ${SUNSHINE_IP} --resolut
 
 ## 安装微信
 ```bash
-echo "=== Checking flatpak ==="
-if ! command -v flatpak &>/dev/null; then
-    echo "Flatpak not found, installing flatpak..."
-    sudo apt install -y flatpak
-fi
-
-echo "=== Checking flathub remote ==="
-# 如果不存在才添加，避免重复报错; 添加【用户级】flathub源，无需sudo、不弹密码
-if ! flatpak --user remote-list | grep -q flathub; then
-    echo "Adding user-level flathub remote..."
-    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-fi
-
 echo "===== 安装微信 Flatpak(com.tencent.WeChat)【当前用户级别】 ====="
 # 检测【用户级别】微信是否已经安装
 if flatpak list --user | grep -q "com.tencent.WeChat"; then
@@ -409,19 +403,6 @@ echo "💡 提示：注销会话后，应用菜单可以找到WeChat；命令行
 ## 安装Podman&Podman desktop
 ```bash
 sudo apt install -y podman
-
-echo "=== Checking flatpak ==="
-if ! command -v flatpak &>/dev/null; then
-    echo "Flatpak not found, installing flatpak..."
-    sudo apt install -y flatpak
-fi
-
-echo "=== Checking flathub remote ==="
-# 如果不存在才添加，避免重复报错; 添加【用户级】flathub源，无需sudo、不弹密码
-if ! flatpak --user remote-list | grep -q flathub; then
-    echo "Adding user-level flathub remote..."
-    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-fi
 
 if ! flatpak --user list | grep -q io.podman_desktop.PodmanDesktop; then
     echo "=== Podman Desktop not found, starting installation (non-interactive) ==="
@@ -530,9 +511,22 @@ podman exec -i --user root "${CONTAINER_NAME}" bash <<INNER_ROOT_EOF
     export DEBIAN_FRONTEND=noninteractive
 
     apt update
-    apt install -y sudo curl ca-certificates iproute2 podman
+    apt install -y curl ca-certificates iproute2 podman
     dpkg --configure --force-confdef --force-confold -a
 
+INNER_ROOT_EOF
+
+echo "===== 安装Node.js LTS22 ====="
+podman exec -i --user root "${CONTAINER_NAME}" bash <<INNER_ROOT_EOF
+    set -euo pipefail
+    export DEBIAN_FRONTEND=noninteractive
+
+    if command -v node &>/dev/null; then
+        echo "=== 检测到 node 已安装，跳过安装流程 ==="
+    else
+        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+        apt install -y nodejs
+    fi
 INNER_ROOT_EOF
 ```
 
@@ -544,7 +538,7 @@ HOST_USER="$USER"
 podman exec -i --user root "${CONTAINER_NAME}" bash <<INNER_ROOT_EOF
     set -euo pipefail
     export DEBIAN_FRONTEND=noninteractive
-
+    
     # 检查git与gh是否全部已安装
     if command -v git &>/dev/null && command -v gh &>/dev/null; then
         echo "=== 检测到 git、gh‑cli 均已安装，跳过安装流程 ==="
@@ -623,20 +617,7 @@ INNER_USER_EOF
 ```bash
 HOST_USER="$USER"
 
-echo "===== 第1步 独立root执行安装Node.js LTS22，执行完销毁此shell进程 ====="
-podman exec -i --user root "${CONTAINER_NAME}" bash <<INNER_ROOT_EOF
-    set -euo pipefail
-    export DEBIAN_FRONTEND=noninteractive
-
-    if command -v node &>/dev/null; then
-        echo "=== 检测到 node 已安装，跳过安装流程 ==="
-    else
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-        apt install -y nodejs
-    fi
-INNER_ROOT_EOF
-
-echo "===== 第2步($HOST_USER)：全新shell进程，配置npm环境 + 安装官方AI CLI工具 ====="
+echo "===== 配置npm环境 + 安装官方AI CLI工具 ====="
 # 关键点：全新podman exec，全新shell，拿到容器完整默认PATH，/usr/bin已经在PATH
 podman exec -i --user "${HOST_USER}" -w "/home/${HOST_USER}" "${CONTAINER_NAME}" bash <<INNER_USER_EOF
     set -euo pipefail
@@ -746,6 +727,7 @@ INNER_USER_EOF
 ```
 
 
+<!-- @force-run -->
 ## 安装完成善后
 ```bash
 echo "=====  安装完成后删除下载目录 softwares ====="

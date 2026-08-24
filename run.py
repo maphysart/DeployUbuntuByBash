@@ -11,39 +11,59 @@ FIRST_RUN_PREPARE_SCRIPT_TPL = """
     mkdir -p "{DOWNLOAD_ROOT}"
     mkdir -p "{PROJECTS_ROOT}"
 """
-
 FIXED_ACTION_TPL = """
     set -euo pipefail
     export DEBIAN_FRONTEND=noninteractive
     cd {DOWNLOAD_ROOT}
 """
 # =================== INSTALLATION CONFIGURATION ===================
-
 CONFIG_SAVE_PATH = Path("./.run_md_config.json")
 
 
 def parse_md_to_modules(md_text: str):
+    """
+    解析markdown：识别 <!-- @force-run --> 在 ## 上方，标记强制执行模块
+    返回：[{"title":"xxx","script":"xxx","force_run":bool}]
+    """
+    # 匹配 ##标题位置
     section_pattern = re.compile(r"^##\s+(.*)$", re.MULTILINE)
     matches = list(section_pattern.finditer(md_text))
     modules = []
+
     for idx, match in enumerate(matches):
         title = match.group(1).strip()
-        start_pos = match.end()
+        start_pos = match.start()
+        end_title = match.end()
+
+        # 当前 ## 标题之前的片段，查找 <!-- @force-run -->
+        pre_chunk = md_text[:start_pos]
+        # 取上一个 ## 之后到当前 ## 之前的内容
+        if idx > 0:
+            prev_end = matches[idx-1].end()
+            pre_chunk = md_text[prev_end:start_pos]
+
+        force_run = bool(re.search(r"<!--\s*@force-run\s*-->", pre_chunk))
+
+        # 本模块内容区间
         if idx + 1 < len(matches):
             end_pos = matches[idx+1].start()
         else:
             end_pos = len(md_text)
-        section_content = md_text[start_pos:end_pos]
+        section_content = md_text[end_title:end_pos]
+
         bash_blocks = re.findall(r"```bash\n(.*?)\n```", section_content, re.DOTALL)
         merged_script = "\n".join(bash_blocks)
+
         modules.append({
             "title": title,
-            "script": merged_script
+            "script": merged_script,
+            "force_run": force_run
         })
     return modules
 
 
 def check_module_title_sync(current_modules, saved_modules):
+    """对比全部模块title集合，包含强制模块"""
     if saved_modules is None:
         return True, False
     current_titles = {m["title"] for m in current_modules}
@@ -55,6 +75,9 @@ def check_module_title_sync(current_modules, saved_modules):
 
 
 def save_config(md_filename: str, module_selections: list[dict]):
+    """
+    保存全部模块；force_run模块强制selected=True；普通模块保存用户选择
+    """
     payload = {}
     if CONFIG_SAVE_PATH.exists():
         try:
@@ -64,9 +87,15 @@ def save_config(md_filename: str, module_selections: list[dict]):
             payload = {}
     if "profiles" not in payload:
         payload["profiles"] = {}
-    payload["profiles"][md_filename] = {
-        "modules": module_selections
-    }
+
+    out_list = []
+    for sel in module_selections:
+        if sel.get("force_run"):
+            out_list.append({"title": sel["title"], "selected": True})
+        else:
+            out_list.append({"title": sel["title"], "selected": sel["selected"]})
+
+    payload["profiles"][md_filename] = {"modules": out_list}
     with open(CONFIG_SAVE_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
@@ -115,7 +144,7 @@ def parse_env_text(env_text: str):
 
 
 def fallback_text_select(modules, selections):
-    """降级纯文本交互，dialog异常卡住时自动进入这里"""
+    """降级文本模式：传入的已经过滤掉force‑run模块"""
     print("\n========================================")
     print("【降级文本模式】模块选择")
     print("回车=沿用现有；编号逗号分隔例如 0,2；all全选；none全取消")
@@ -146,6 +175,7 @@ def fallback_text_select(modules, selections):
 
 
 def dialog_multi_select(modules, selections):
+    """dialog选择：传入的已经过滤掉force‑run模块"""
     dialog_args = ["dialog", "--checklist", "请勾选要执行的模块（空格勾选，Tab切换OK确认）", "20", "75", "12"]
     for idx, sel in enumerate(selections):
         status = "on" if sel["selected"] else "off"
@@ -154,7 +184,6 @@ def dialog_multi_select(modules, selections):
         dialog_args.append(status)
 
     try:
-        # 关键点：UI直接读写 /dev/tty，结果捕获stderr
         with open("/dev/tty", "r") as tty_in, open("/dev/tty", "w") as tty_out:
             proc = subprocess.Popen(
                 dialog_args,
@@ -174,7 +203,6 @@ def dialog_multi_select(modules, selections):
         proc.wait()
         return fallback_text_select(modules, selections)
     except OSError:
-        # 没有tty设备（管道/CI环境）直接降级
         print("\n⚠️ 当前终端不支持dialog TUI，切换文本模式")
         return fallback_text_select(modules, selections)
 
@@ -214,7 +242,7 @@ def main():
         print(f"❌ 无效输入: {user_input}，仅允许输入 1 或 2，退出程序")
         sys.exit(1)
 
-    env_md_path = Path("./env.md")
+    env_md_path = Path("./.env")
     if not env_md_path.exists():
         print(f"❌ 错误：找不到环境配置文件 {env_md_path.resolve()}")
         sys.exit(1)
@@ -253,11 +281,11 @@ def main():
 
     _, need_reset = check_module_title_sync(modules, saved_modules)
     if need_reset:
-        print("\n⚠️ 检测到Markdown模块标题发生变更（新增/删除/修改模块标题）")
-        print(f"⚠️ 删除旧配置文件 {CONFIG_SAVE_PATH.name}，全部模块恢复为【默认勾选】")
+        print(f"\n⚠️ 检测到Markdown模块标题发生变更，删除旧配置文件 {CONFIG_SAVE_PATH.name}，全部模块恢复为【默认勾选】")
         CONFIG_SAVE_PATH.unlink(missing_ok=True)
         saved_modules = None
 
+    # 初始化全部模块的 selections
     selections = []
     for m in modules:
         saved_item = None
@@ -266,25 +294,43 @@ def main():
                 if sm["title"] == m["title"]:
                     saved_item = sm
                     break
-        selected = bool(saved_item["selected"]) if saved_item is not None else True
-        selections.append({"title": m["title"], "selected": selected})
+        if m["force_run"]:
+            selected = True
+        else:
+            selected = bool(saved_item["selected"]) if saved_item is not None else True
+        selections.append({"title": m["title"], "selected": selected, "force_run": m["force_run"]})
 
-    selections = dialog_multi_select(modules, selections)
+    # 提取普通（非强制）模块给UI交互
+    ui_indices = [i for i, s in enumerate(selections) if not s["force_run"]]
+    ui_selections = [selections[i] for i in ui_indices]
 
+    if len(ui_selections) > 0:
+        ui_selections = dialog_multi_select(modules, ui_selections)
+        # 将UI选择结果回填回总selections
+        for ui_pos, real_idx in enumerate(ui_indices):
+            selections[real_idx]["selected"] = ui_selections[ui_pos]["selected"]
+    else:
+        print("\nℹ️ 当前md没有可选择模块，全部模块为强制执行")
+
+    # 保存配置（内部自动把force_run强制写selected=True）
     save_config(md_filename, selections)
 
+    # 组装最终执行列表，保持md原始顺序
     run_modules = []
     for idx, mod in enumerate(modules):
         sel_info = selections[idx]
         if sel_info["selected"]:
             run_modules.append(mod)
+
     if len(run_modules) == 0:
         print("\n⚠️ 没有选中任何模块，程序直接退出")
         sys.exit(0)
 
     print(f"\n✅ 将要执行 {len(run_modules)} 个模块")
     for m in run_modules:
-        print(f"    · {m['title']}")
+        note = "【强制】" if m["force_run"] else ""
+        print(f"    · {m['title']} {note}")
+
     try:
         input("\n按回车确认开始执行 ...")
     except KeyboardInterrupt:
