@@ -6,7 +6,7 @@
 5. 安装podman镜像，并进入容器安装AI相关工具
 
 
-## 准备安装
+## 更新源，安装必要软件
 ```bash
 # 更新软件源
 sudo apt update -y
@@ -15,7 +15,7 @@ sudo apt update -y
 sudo apt install -y net-tools gedit synaptic git gedit curl
 ```
 
-## 安装 Google Chrome
+## 安装Google Chrome
 ```bash
 echo "===== 开始安装 Google Chrome Stable ====="
 
@@ -31,7 +31,7 @@ fi
 ```
 
 
-## 安装 RustDesk
+## 安装RustDesk
 ```bash
 echo "===== 安装 RustDesk 远程桌面客户端（自动获取最新stable版本deb） ====="
 
@@ -77,7 +77,7 @@ echo "💡 提示：终端输入 rustdesk 启动；应用菜单打开 RustDesk"
 ```
 
 
-## 安装 vs code
+## 安装vscode
 ```bash
 echo "===== 安装 Visual Studio Code ====="
 
@@ -405,7 +405,7 @@ echo "💡 提示：注销会话后，应用菜单可以找到WeChat；命令行
 ```
 
 
-## 安装 Podman&Podman desktop
+## 安装Podman&Podman desktop
 ```bash
 sudo apt install -y podman
 
@@ -461,7 +461,7 @@ fi
 
 # ========== 配置区 ==========
 HOST_USER="$USER"
-HOME_MOUNT_SRC="${HOME}/Podman/${CONTAINER_NAME}"
+HOME_MOUNT_SRC="${PODMAN_ROOT}/${CONTAINER_NAME}"
 # ===========================
 
 # 1. 创建宿主机目录并修正权限
@@ -486,14 +486,14 @@ else
       --network host \
       --userns=keep-id \
       -v "${HOME_MOUNT_SRC}:/home/${HOST_USER}" \
-      -v "${HOME}/Projects:/Projects" \
+      -v "${PROJECTS_ROOT}:/Projects" \
       -v /tmp/.X11-unix:/tmp/.X11-unix \
       -v "${SSH_AUTH_SOCK}:/ssh-agent.sock:ro" \
       -e SSH_AUTH_SOCK=/ssh-agent.sock \
       -v "/run/user/$UID/podman/podman.sock:/run/user/$UID/podman/podman.sock" \
       -e CONTAINER_HOST="unix:///run/user/$UID/podman/podman.sock" \
       -e DISPLAY="${DISPLAY}" \
-      "${IMAGE_NAME}" sleep infinity
+      "${CONTAINER_IMAGE}" sleep infinity
 
     echo "⚙️ 开始执行容器内用户初始化"
     export HOST_USER
@@ -747,22 +747,19 @@ INNER_USER_EOF
 
 ## 完成安装
 ```bash
-echo "=====  安装完成后删除临时目录 softwares ====="
-# 返回Downloads目录
-cd ..
-# 删除整个临时softwares目录
-rm -rf softwares
+echo "=====  安装完成后删除下载目录 softwares ====="
+cd ~
+# 删除整个临时softwares目录, `:?`防止变量为空造成灾难性
+rm -rf "${DOWNLOAD_ROOT:?}"
 
-echo "===== 清理旧podman‑exec相关函数/alias，配置宿主机 .bashrc 新快捷入口 ====="
+echo "===== 配置宿主机 .bashrc 容器快捷入口 ====="
 ALIAS_NAME="${CONTAINER_NAME}"
 BASHRC_FILE="${HOME}/.bashrc"
 
-# 删除旧：同时包含 podman exec -it 与 -w /home/ 的旧alias行
-sed -i '/podman exec -it/{/-w \/home\//d}' "${BASHRC_FILE}"
-# 同时清理旧的同名shell函数残留（防止多次运行堆积）
-sed -i "/^${ALIAS_NAME}() {/,/^}/d" "${BASHRC_FILE}"
+# 删除旧的【PodmanAI标记包裹】整块内容（含首尾注释标记）
+sed -i '/# >>> PodmanAI: auto‑generated block start >>>/,/# <<< PodmanAI: auto‑generated block end <<</d' "${BASHRC_FILE}"
 
-# 写入shell函数：实现自动判断容器状态，不存在则start，再exec进入
+# 准备待写入的函数代码块
 NEW_FUNC_BLOCK=$(cat <<FUNC_EOF
 ${ALIAS_NAME}() {
     local ctn_name="${ALIAS_NAME}"
@@ -782,11 +779,25 @@ ${ALIAS_NAME}() {
 FUNC_EOF
 )
 
-echo "${NEW_FUNC_BLOCK}" >> "${BASHRC_FILE}"
+# 逻辑：仅当文件最后一行不为空时，才追加一个空行做间隔
+LAST_LINE=$(tail -n1 "${BASHRC_FILE}")
+APPEND_BLANK=""
+if [[ -n "${LAST_LINE}" ]]; then
+    APPEND_BLANK=$'\n'
+fi
+
+# 写入：条件空行 + 开始标记 + 函数 + 结束标记
+{
+    printf "%s" "${APPEND_BLANK}"
+    echo "# >>> PodmanAI: auto‑generated block start >>>"
+    echo "${NEW_FUNC_BLOCK}"
+    echo "# <<< PodmanAI: auto‑generated block end <<<"
+} >> "${BASHRC_FILE}"
 
 echo "✅ 已在 ${BASHRC_FILE} 设置函数入口：${ALIAS_NAME}"
 echo "💡 使用方式：新开host终端，source .bashrc, 然后直接输入命令：${ALIAS_NAME}"
 echo "💡 容器停止时会自动执行 podman start，然后进入容器"
+echo "💡 如需手动清除该自动生成块，执行：sed -i '/# >>> PodmanAI: auto‑generated block start >>>/,/# <<< PodmanAI: auto‑generated block end <<</d' ~/.bashrc"
 
 echo "===== 全部流程执行完毕，临时目录已清理 ====="
 ```
