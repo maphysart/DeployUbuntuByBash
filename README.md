@@ -2,13 +2,13 @@
 这是用于在ubuntu 24.04上安装开发必需的软件，并在podman中部署AI相关工具的项目。
 
 ## 原理
-run_md_bash.py 会读取env.md中的用户信息和全局变量，然后读取install_ubuntu.md中的各个bash脚本块，依次执行。
+run_md_bash.py 会读取.env中的用户信息和全局变量，然后读取install_ubuntu.md中的各个bash脚本块，依次执行。
 - 自动化安装输入法，微信等。
 - 在podman中搭建hermes，codex，claude code，opencodex,github cli等AI工具。
 - 通过映射host上的socket，从而在容器内可以创建容器。
 
 ## 准备工作
-在一个全新安装的ubuntu 24.04上，将env.md.template复制，改名为env.md，填写或修改其中的CONTAINER_NAME， GIT_NAME， GIT_EMAIL等。
+在一个全新安装的ubuntu 24.04上，将.env.template复制，改名为.env，填写或修改其中的CONTAINER_NAME， GIT_NAME， GIT_EMAIL等。
 为了在执行中交互时选择安装或删除项，需要安装dialog，执行下方脚本。
 ```bash
 sudo apt update && sudo apt install dialog -y
@@ -28,7 +28,8 @@ python3 run_md_bash.py
 ```bash
 source .bashrc
 ```
-然后执行CONTAINER_NAME， 就会进入容器内的Home目录内。
+执行"CONTAINER_NAME"， 就会以普通用户进入容器内的Home目录。
+执行"rCONTAINER_NAME"，就会以root用户进入容器内的Home目录。
 
 ### 3 首次启动容器后的设置
 #### 3.1 gh首次登陆
@@ -39,14 +40,33 @@ gh auth login
 流程选择：
 What account do you want to log into? GitHub.com
 What is your preferred protocol for Git operations? SSH
+Generate a new SSH key to add to your GitHub account? No
 How would you like to authenticate GitHub CLI? Login with a web browser
 复制设备码，浏览器打开网页完成授权。
 登录完成后查看当前身份：
 ```bash
 gh auth status
-gh api user
 ```
 之后认证信息会保存到host的~/Podman/CONTAINER_NAME/.config/gh/下，下次加载时会自动载入，不需要再次认证。
+
+测试下，拉取repo里最近创建的5个repo的信息
+```bash
+gh api graphql -f query='
+query {
+  viewer {
+    repositories(first:5, orderBy:{field:CREATED_AT, direction:DESC}, ownerAffiliations:OWNER) {
+      nodes {
+        name
+        description
+        createdAt
+        visibility
+        url
+        isFork
+      }
+    }
+  }
+}
+```
 
 #### 3.2 opencodex首次登陆
 启动服务
@@ -81,7 +101,7 @@ sudo ufw allow 10100/tcp
 ```
 
 ##### 在局域网内任一台机器上
-在以下操作中，都需要将OPENCODEX_API_AUTH_TOKEN替换为env.md中的设置，opencodex_IP替换为开启opencodex服务的机器的ip地址（如果是host自身，则为localhost）
+在以下操作中，都需要将OPENCODEX_API_AUTH_TOKEN替换为.env中的设置，opencodex_IP替换为开启opencodex服务的机器的ip地址（如果是host自身，则为localhost）
 
 执行下面命令，检查连接情况。
 ```bash

@@ -756,8 +756,24 @@ ${ALIAS_NAME}() {
         echo "容器 \${ctn_name} 未运行，正在执行 podman start ..."
         podman start "\${ctn_name}"
     fi
-    # 进入容器
+    # 普通用户进入容器
     podman exec -it --user "\$USER" -w "/home/\$USER" "\${ctn_name}" bash
+}
+
+r${ALIAS_NAME}() {
+    local ctn_name="${ALIAS_NAME}"
+    # 判断容器是否存在
+    if ! podman ps -a --filter "name=^/\${ctn_name}\$" | grep -q "\${ctn_name}"; then
+        echo "错误：容器 \${ctn_name} 不存在！"
+        return 1
+    fi
+    # 判断是否正在运行
+    if ! podman ps --filter "name=^/\${ctn_name}\$" | grep -q "\${ctn_name}"; then
+        echo "容器 \${ctn_name} 未运行，正在执行 podman start ..."
+        podman start "\${ctn_name}"
+    fi
+    # root身份进入容器，工作目录 /root
+    podman exec -it --user root -w "/home/\$USER" "\${ctn_name}" bash
 }
 FUNC_EOF
 )
