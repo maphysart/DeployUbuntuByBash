@@ -129,7 +129,7 @@ podman exec -it sandbox01 bash
 
 # 执行任何操作，比如编译，改错等等。
 
-# ctrl + c 退出sandbox01
+# ctrl + d 退出sandbox01
 ```
 就可以进入一个新的名为sandbox01的容器。其实这个容器，是在host上创建的，并非嵌套关系。
 退出sandbox01后，需要在容器内执行，

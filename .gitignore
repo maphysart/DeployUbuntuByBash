@@ -6,3 +6,5 @@ codex/config.toml
 
 # 忽略保存用户选项的文件
 .run_md_config.json
+
+*.sh
